@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import { MongoClient } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 import Joi from "joi";
 import { stripHtml } from "string-strip-html";
 import { v4 as uuidv4 } from "uuid";
@@ -17,8 +17,8 @@ const mongoClint = new MongoClient(process.env.DATABASE_URL);
 try {
     await mongoClint.connect();
     console.log('MongoDB Connected');
-} catch (err) {
-    console.log(err);
+} catch (error) {
+    console.log(error);
 }
 
 const db = mongoClint.db();
@@ -30,8 +30,12 @@ function applyStripHtml(target) {
 
 
 const joiSchemes = {
-    postUser: Joi.object({
+    postSignUp: Joi.object({
         name: Joi.string().min(3).max(50).required().custom(applyStripHtml).trim(),
+        email: Joi.string().email().required().custom(applyStripHtml).trim(),
+        password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{3,30}$')).required().trim()
+    }),
+    postLogin: Joi.object({
         email: Joi.string().email().required().custom(applyStripHtml).trim(),
         password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{3,30}$')).required().trim()
     })
@@ -39,7 +43,7 @@ const joiSchemes = {
 
 app.post('/sign-up', async (req, res) => {
     const { name, email, password } = req.body;
-    const validation = joiSchemes.postUser.validate({ name, email, password }, { abortEarly: false });
+    const validation = joiSchemes.postSignUp.validate({ name, email, password }, { abortEarly: false });
     if (validation.error) return res.status(422).send(validation.error.details.map(e => e.message.replaceAll('\"', '')));
 
     const hash = bcrypt.hashSync(validation.value.password, 10);
@@ -49,29 +53,29 @@ app.post('/sign-up', async (req, res) => {
         if (search) return res.sendStatus(409);
         await db.collection('users').insertOne({ name: validation.value.name, email: validation.value.email, password: hash });
         return res.sendStatus(201);
-    } catch (err) {
-        console.log(err);
+    } catch (error) {
+        console.log(error);
         return res.sendStatus(500);
     }
 });
 
 app.post('/login', async (req, res) => {
-    const { name, email, password } = req.body;
+    const { email, password } = req.body;
 
-    const validation = joiSchemes.postUser.validate({ name, email, password }, { abortEarly: false });
+    const validation = joiSchemes.postLogin.validate({ email, password }, { abortEarly: false });
     if (validation.error) return res.status(422).send(validation.error.details.map(e => e.message.replaceAll('\"', '')));
 
     try {
         const searchUser = await db.collection('users').findOne({ email: validation.value.email });
-        if (!searchUser) return res.sendStatus(404);
-        if (bcrypt.compareSync(validation.value.password, searchUser.password) === false) return res.sendStatus(401);
+        if (!searchUser) return res.status(404).send('Email not registered');
+        if (bcrypt.compareSync(validation.value.password, searchUser.password) === false) return res.status(401).send('Wrong password');
         const token = uuidv4();
         const searchToken = await db.collection('tokens').findOne({ userId: searchUser._id });
         if (searchToken) await db.collection('tokens').updateOne({ userId: searchUser._id }, { $set: { token, timestamp: Date.now() } });
         else await db.collection('tokens').insertOne({ userId: searchUser._id, token, timestamp: Date.now() });
-        return res.send(token);
-    } catch (err) {
-        console.log(err);
+        return res.send({token, name: searchUser.name});
+    } catch (error) {
+        console.log(error);
         return res.sendStatus(500);
     }
 });
@@ -89,11 +93,10 @@ app.post('/transactions/send', async (req, res) => {
     try {
         const search = await db.collection('tokens').findOne({ token });
         if (!search) return res.status(401).send('Invalid Token');
-        console.log(search);
-        await db.collection('transactions').insertOne({ userId: search.userId, description, value, type: 'outbound' });
+        await db.collection('transactions').insertOne({ userId: search.userId, description, value, type: 'outbound', timestamp: Date.now() });
         return res.sendStatus(201);
-    } catch (err) {
-        console.log(err);
+    } catch (error) {
+        console.log(error);
         return res.sendStatus(500);
     }
 })
@@ -111,11 +114,10 @@ app.post('/transactions/receive', async (req, res) => {
     try {
         const search = await db.collection('tokens').findOne({ token });
         if (!search) return res.status(401).send('Invalid Token');
-        console.log(search);
-        await db.collection('transactions').insertOne({ userId: search.userId, description, value, type: 'inbound' });
+        await db.collection('transactions').insertOne({ userId: search.userId, description, value, type: 'inbound', timestamp: Date.now() });
         return res.sendStatus(201);
-    } catch (err) {
-        console.log(err);
+    } catch (error) {
+        console.log(error);
         return res.sendStatus(500);
     }
 })
@@ -129,8 +131,26 @@ app.get('/transactions', async (req, res) => {
         if (!searchToken) return res.sendStatus(401);
         const transactions=await db.collection('transactions').find({userId: searchToken.userId}).toArray();
         return res.send(transactions);
-    } catch (err) {
-        console.log(err);
+    } catch (error) {
+        console.log(error);
+        return res.sendStatus(500);
+    }
+})
+
+app.delete('/transactions', async (req, res) =>{
+    const token=req.headers.authorization?.replace('Bearer ','');
+    const {id}=req.body;
+    if(!token) return res.status(401).send('Missing token');
+    if(!id) return res.status(401).send('Missing id');
+
+    try {
+        const searchToken = await db.collection('tokens').findOne({ token });
+        if (!searchToken) return res.status(401).send('Invalid token');
+        const deletedLog = await db.collection('transactions').deleteOne({_id: new ObjectId(id), userId: searchToken.userId});
+        console.log(deletedLog);
+        return res.status(200).send('Entry deleted')
+    } catch (error) {
+        console.log(error);
         return res.sendStatus(500);
     }
 })
