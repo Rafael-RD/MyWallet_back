@@ -147,8 +147,31 @@ app.delete('/transactions', async (req, res) =>{
         const searchToken = await db.collection('tokens').findOne({ token });
         if (!searchToken) return res.status(401).send('Invalid token');
         const deletedLog = await db.collection('transactions').deleteOne({_id: new ObjectId(id), userId: searchToken.userId});
-        console.log(deletedLog);
         return res.status(200).send('Entry deleted')
+    } catch (error) {
+        console.log(error);
+        return res.sendStatus(500);
+    }
+})
+
+app.put('/transactions', async (req, res)=>{
+    const token=req.headers.authorization?.replace('Bearer ','');
+    const {id}=req.body;
+    const value = Number(req.body.value);
+    const description = req.body.description;
+
+    if (!token) return res.sendStatus(401);
+    if(!id) return res.status(401).send('Missing id');
+    if (isNaN(value) || value <= 0) return res.status(422).send('Invalid Value');
+    if (description === undefined || description?.length < 1) return res.status(422).send('Invalid Description');
+    const strippedDescription = stripHtml(description).result;
+
+    try {
+        const searchToken = await db.collection('tokens').findOne({ token });
+        if (!searchToken) return res.status(401).send('Invalid token');
+        const {modifiedCount}=await db.collection('transactions').updateOne({_id: new ObjectId(id), userId: searchToken.userId}, {$set: {value, description: strippedDescription}});
+        return res.sendStatus(200);
+
     } catch (error) {
         console.log(error);
         return res.sendStatus(500);
