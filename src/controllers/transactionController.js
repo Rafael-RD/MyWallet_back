@@ -16,7 +16,7 @@ export async function send(req, res){
     try {
         const search = await db.collection('tokens').findOne({ token });
         if (!search) return res.status(401).send('Invalid Token');
-        await db.collection('transactions').insertOne({ userId: search.userId, description, value, type: 'outbound', timestamp: Date.now() });
+        await db.collection('transactions').insertOne({ userId: search.userId, description: strippedDescription, value, type: 'outbound', timestamp: Date.now() });
         return res.sendStatus(201);
     } catch (error) {
         console.log(error);
@@ -37,7 +37,7 @@ export async function receive(req, res){
     try {
         const search = await db.collection('tokens').findOne({ token });
         if (!search) return res.status(401).send('Invalid Token');
-        await db.collection('transactions').insertOne({ userId: search.userId, description, value, type: 'inbound', timestamp: Date.now() });
+        await db.collection('transactions').insertOne({ userId: search.userId, description: strippedDescription, value, type: 'inbound', timestamp: Date.now() });
         return res.sendStatus(201);
     } catch (error) {
         console.log(error);

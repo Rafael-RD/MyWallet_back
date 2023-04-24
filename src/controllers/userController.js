@@ -3,8 +3,6 @@ import joiSchemes from "../schemas/userSchema.js"
 import bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from "uuid";
 
-
-
 export async function signUp(req, res){
     const { name, email, password } = req.body;
     const validation = joiSchemes.postSignUp.validate({ name, email, password }, { abortEarly: false });
