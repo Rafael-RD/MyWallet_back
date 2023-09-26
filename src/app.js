@@ -9,4 +9,4 @@ app.use(express.json());
 app.use(cors());
 app.use(indexRouter);
 
-app.listen(process.env.PORT, () => console.log(`Server on ${process.env.PORT}`));
+app.listen(process.env.PORT || 3000, () => console.log(`Server on ${process.env.PORT || 3000}`));
